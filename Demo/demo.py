@@ -1,33 +1,40 @@
 import numpy as np
+import os
 import pandas as pd
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
 from skimage import morphology, io, color, exposure, img_as_float, transform
 from matplotlib import pyplot as plt
 
-def loadDataGeneral(df, path, im_shape):
-    X, y = [], []
-    for i, item in df.iterrows():
-        img = img_as_float(io.imread(path + item[0]))
-        mask = io.imread(path + item[1])
-        img = transform.resize(img, im_shape)
-        img = exposure.equalize_hist(img)
-        img = np.expand_dims(img, -1)
-        mask = transform.resize(mask, im_shape)
-        mask = np.expand_dims(mask, -1)
-        X.append(img)
-        y.append(mask)
+def loadDataGeneral(data_path, image_list, im_shape):
+    X = []
+    image_dir = os.path.join(data_path, 'images')
+    image_names = []
+
+    with open(image_list, 'r') as f:
+    	for line in f:
+    		image_file = os.path.join(image_dir, line[:-1])
+    		img = img_as_float(io.imread(image_file))
+    		if len(img.shape) == 3:
+    			continue
+    		img = transform.resize(img, im_shape)
+    		img = exposure.equalize_hist(img)
+    		img = np.expand_dims(img, -1)
+    		
+    		X.append(img)
+    		image_names.append(image_file)
+
     X = np.array(X)
-    y = np.array(y)
+    #print(X.shape)
     X -= X.mean()
     X /= X.std()
 
     print '### Dataset loaded'
-    print 'path = {}'.format(path)
-    print 'data shape: {}, {}'.format(X.shape, y.shape)
-    print 'min and max value, X:{:.1f}, {:.1f}\ty:{:.1f}, {:.1f}'.format(X.min(), X.max(), y.min(), y.max())
+    print 'path = {}'.format(data_path)
+    print 'data shape: {}'.format(X.shape)
+    print 'min and max value, X:{:.1f}, {:.1f}'.format(X.min(), X.max())
     print 'statistic, X.mean = {}, X.std = {}'.format(X.mean(), X.std())
-    return X, y
+    return X, image_names
 
 def IoU(y_true, y_pred):
     """Returns Intersection over Union score for ground truth and predicted masks."""
@@ -75,15 +82,14 @@ if __name__ == '__main__':
 
     # Path to csv-file. File should contain X-ray filenames as first column,
     # mask filenames as second column.
-    csv_path = 'idx.csv'
-    # Path to the folder with images. Images will be read from path + path_from_csv
-    path = 'Data/'
+    data_path = '/Users/chaoyan/Documents/Nvidia/CXR/'
+    image_list = os.path.join(data_path, 'list.txt')
 
-    df = pd.read_csv(csv_path)
+
 
     # Load test data
     im_shape = (256, 256)
-    X, y = loadDataGeneral(df, path, im_shape)
+    X, image_names = loadDataGeneral(data_path, image_list, im_shape)
 
     n_test = X.shape[0]
     inp_shape = X[0].shape
@@ -100,55 +106,23 @@ if __name__ == '__main__':
 
     gts, prs = [], []
     i = 0
-    plt.figure(figsize=(10, 10))
-    for xx, yy in test_gen.flow(X, y, batch_size=1):
-        img = exposure.rescale_intensity(np.squeeze(xx), out_range=(0,1))
-        pred = UNet.predict(xx)[..., 0].reshape(inp_shape[:2])
-        mask = yy[..., 0].reshape(inp_shape[:2])
+    for xx in test_gen.flow(X, shuffle=False, batch_size=1):
+  		img = exposure.rescale_intensity(np.squeeze(xx), out_range=(0,1))
+  		pred = UNet.predict(xx)[..., 0].reshape(inp_shape[:2])
+        #mask = yy[..., 0].reshape(inp_shape[:2])
 
-        gt = mask > 0.5
-        pr = pred > 0.5
+        #gt = mask > 0.5
+		pr = pred > 0.5
+		pr = remove_small_regions(pr, 0.02 * np.prod(im_shape))
 
-        pr = remove_small_regions(pr, 0.02 * np.prod(im_shape))
+		plt.figure()
+		plt.imshow(pr, 'gray')
+		plt.savefig(image_names[i] + '.mask.jpg')
+		#plt.show()
+		plt.close()
+		i += 1
 
-        #io.imsave('{}'.format(df.iloc[i].path), masked(img, gt, pr, 1))
+		if n_test == i:
+			break
 
-        gts.append(gt)
-        prs.append(pr)
-        ious[i] = IoU(gt, pr)
-        dices[i] = Dice(gt, pr)
-        print df.iloc[i][0], ious[i], dices[i]
 
-        if i < 4:
-            plt.subplot(4, 4, 4 * i + 1)
-            plt.title('Processed ' + df.iloc[i][0])
-            plt.axis('off')
-            plt.imshow(img, cmap='gray')
-
-            plt.subplot(4, 4, 4 * i + 2)
-            plt.title('IoU = {:.4f}'.format(ious[i]))
-            plt.axis('off')
-            plt.imshow(masked(img, gt, pr, 1))
-
-            plt.subplot(4, 4, 4 * i + 3)
-            plt.title('Prediction')
-            plt.axis('off')
-            plt.imshow(pred, cmap='gray')
-
-            plt.subplot(4, 4, 4 * i + 4)
-            plt.title('Difference')
-            plt.axis('off')
-            pr = 255 * pr
-            gt = 255 * gt
-            diff = np.dstack((pr.astype(np.int8), gt.astype(np.int8), pr.astype(np.int8)))
-            plt.imshow(diff)
-
-        i += 1
-        if i == n_test:
-            break
-
-    print 'Mean IoU:', ious.mean()
-    print 'Mean Dice:', dices.mean()
-    plt.tight_layout()
-    plt.savefig('results.png')
-    plt.show()
