@@ -23,10 +23,10 @@ def loadDataGeneral(df, path, im_shape):
     X /= X.std()
 
     print '### Dataset loaded'
-    print '\t{}'.format(path)
-    print '\t{}\t{}'.format(X.shape, y.shape)
-    print '\tX:{:.1f}-{:.1f}\ty:{:.1f}-{:.1f}\n'.format(X.min(), X.max(), y.min(), y.max())
-    print '\tX.mean = {}, X.std = {}'.format(X.mean(), X.std())
+    print 'path = {}'.format(path)
+    print 'data shape: {}, {}'.format(X.shape, y.shape)
+    print 'min and max value, X:{:.1f}, {:.1f}\ty:{:.1f}, {:.1f}'.format(X.min(), X.max(), y.min(), y.max())
+    print 'statistic, X.mean = {}, X.std = {}'.format(X.mean(), X.std())
     return X, y
 
 def IoU(y_true, y_pred):
@@ -120,7 +120,7 @@ if __name__ == '__main__':
         print df.iloc[i][0], ious[i], dices[i]
 
         if i < 4:
-            plt.subplot(4, 4, 4*i+1)
+            plt.subplot(4, 4, 4 * i + 1)
             plt.title('Processed ' + df.iloc[i][0])
             plt.axis('off')
             plt.imshow(img, cmap='gray')
@@ -130,15 +130,18 @@ if __name__ == '__main__':
             plt.axis('off')
             plt.imshow(masked(img, gt, pr, 1))
 
-            plt.subplot(4, 4, 4*i+3)
+            plt.subplot(4, 4, 4 * i + 3)
             plt.title('Prediction')
             plt.axis('off')
-            plt.imshow(pred, cmap='jet')
+            plt.imshow(pred, cmap='gray')
 
-            plt.subplot(4, 4, 4*i+4)
+            plt.subplot(4, 4, 4 * i + 4)
             plt.title('Difference')
             plt.axis('off')
-            plt.imshow(np.dstack((pr.astype(np.int8), gt.astype(np.int8), pr.astype(np.int8))))
+            pr = 255 * pr
+            gt = 255 * gt
+            diff = np.dstack((pr.astype(np.int8), gt.astype(np.int8), pr.astype(np.int8)))
+            plt.imshow(diff)
 
         i += 1
         if i == n_test:
