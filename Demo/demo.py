@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from keras.models import load_model
 from keras.preprocessing.image import ImageDataGenerator
-from skimage import morphology, io, color, exposure, img_as_float, transform
+from skimage import morphology, io, color, exposure, img_as_float, transform, img_as_uint
 from matplotlib import pyplot as plt
 
 def loadDataGeneral(data_path, image_list, im_shape):
@@ -85,8 +85,6 @@ if __name__ == '__main__':
     data_path = '/Users/chaoyan/Documents/Nvidia/CXR/'
     image_list = os.path.join(data_path, 'list.txt')
 
-
-
     # Load test data
     im_shape = (256, 256)
     X, image_names = loadDataGeneral(data_path, image_list, im_shape)
@@ -114,12 +112,16 @@ if __name__ == '__main__':
         #gt = mask > 0.5
 		pr = pred > 0.5
 		pr = remove_small_regions(pr, 0.02 * np.prod(im_shape))
+		
+		io.imsave(image_names[i] + '.mask.jpg',  img_as_uint(pr))
 
-		plt.figure()
+		"""
 		plt.imshow(pr, 'gray')
-		plt.savefig(image_names[i] + '.mask.jpg')
+		plt.axis('off')
+		plt.savefig(image_names[i] + '.mask.jpg', bbox_inches='tight')
 		#plt.show()
 		plt.close()
+		"""
 		i += 1
 
 		if n_test == i:
