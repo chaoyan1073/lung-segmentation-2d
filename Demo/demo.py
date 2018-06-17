@@ -6,35 +6,31 @@ from keras.preprocessing.image import ImageDataGenerator
 from skimage import morphology, io, color, exposure, img_as_float, transform, img_as_uint
 from matplotlib import pyplot as plt
 
-def loadDataGeneral(data_path, image_list, im_shape):
+def loadDataGeneral(load_img_names, im_shape):
     X = []
-    image_dir = os.path.join(data_path, 'images')
-    image_names = []
-
-    with open(image_list, 'r') as f:
-    	for line in f:
-    		image_file = os.path.join(image_dir, line[:-1])
-    		img = img_as_float(io.imread(image_file))
-    		if len(img.shape) == 3:
-    			continue
-    		img = transform.resize(img, im_shape)
-    		img = exposure.equalize_hist(img)
-    		img = np.expand_dims(img, -1)
-    		
-    		X.append(img)
-    		image_names.append(image_file)
+    #print '---------------------start read data'
+    cnt = 0
+    for image_file in load_img_names:
+        img = img_as_float(io.imread(image_file))
+        if len(img.shape) == 3:
+            print '---------------------wrong size:', image_file
+            continue
+        img = transform.resize(img, im_shape)
+		#img = exposure.equalize_hist(img)
+        img = np.expand_dims(img, -1)
+        X.append(img)
 
     X = np.array(X)
-    #print(X.shape)
+    #print '---------------------X shape:', X.shape
     X -= X.mean()
     X /= X.std()
 
-    print '### Dataset loaded'
+    #print '### Dataset loaded'
     print 'path = {}'.format(data_path)
-    print 'data shape: {}'.format(X.shape)
-    print 'min and max value, X:{:.1f}, {:.1f}'.format(X.min(), X.max())
-    print 'statistic, X.mean = {}, X.std = {}'.format(X.mean(), X.std())
-    return X, image_names
+    #print 'data shape: {}'.format(X.shape)
+    #print 'min and max value, X:{:.1f}, {:.1f}'.format(X.min(), X.max())
+    #print 'statistic, X.mean = {}, X.std = {}'.format(X.mean(), X.std())
+    return X, load_img_names
 
 def IoU(y_true, y_pred):
     """Returns Intersection over Union score for ground truth and predicted masks."""
@@ -78,53 +74,63 @@ def remove_small_regions(img, size):
     img = morphology.remove_small_holes(img, size)
     return img
 
+def partition(lst, n):
+    division = len(lst) / float(n)
+    return [ lst[int(round(division * i)): int(round(division * (i + 1)))] for i in xrange(n) ]
+
 if __name__ == '__main__':
 
     # Path to csv-file. File should contain X-ray filenames as first column,
     # mask filenames as second column.
-    data_path = '/Users/chaoyan/Documents/Nvidia/CXR/'
-    image_list = os.path.join(data_path, 'list.txt')
+    data_path = '/home/allen/Documents/Data/PLCO_rotated'
+    image_list = '/home/allen/Documents/Data/list.txt'
+
+    image_names = []
+    with open(image_list, 'r') as f:
+        for line in f:
+            items = line.split()
+            image_name = os.path.join(data_path, items[0])
+            image_names.append(image_name)
+    
+    image_name_lists = partition(image_names, 100)
 
     # Load test data
     im_shape = (256, 256)
-    X, image_names = loadDataGeneral(data_path, image_list, im_shape)
-
-    n_test = X.shape[0]
-    inp_shape = X[0].shape
-
     # Load model
     model_name = '../trained_model.hdf5'
     UNet = load_model(model_name)
+    for name_list in image_name_lists:
+        print 'load images number:', len(name_list)
+        X, img_names = loadDataGeneral(name_list, im_shape)
+        n_test = X.shape[0]
+        inp_shape = X[0].shape
 
-    # For inference standard keras ImageGenerator can be used.
-    test_gen = ImageDataGenerator(rescale=1.)
+        # For inference standard keras ImageGenerator can be used.
+        test_gen = ImageDataGenerator(rescale=1.)
 
-    ious = np.zeros(n_test)
-    dices = np.zeros(n_test)
-
-    gts, prs = [], []
-    i = 0
-    for xx in test_gen.flow(X, shuffle=False, batch_size=1):
-  		img = exposure.rescale_intensity(np.squeeze(xx), out_range=(0,1))
-  		pred = UNet.predict(xx)[..., 0].reshape(inp_shape[:2])
-        #mask = yy[..., 0].reshape(inp_shape[:2])
-
-        #gt = mask > 0.5
-		pr = pred > 0.5
-		pr = remove_small_regions(pr, 0.02 * np.prod(im_shape))
-		
-		io.imsave(image_names[i] + '.mask.jpg',  img_as_uint(pr))
-
-		"""
-		plt.imshow(pr, 'gray')
-		plt.axis('off')
-		plt.savefig(image_names[i] + '.mask.jpg', bbox_inches='tight')
-		#plt.show()
-		plt.close()
-		"""
-		i += 1
-
-		if n_test == i:
-			break
+        batches = 0
+        bs = 64
+        for xx, yy in test_gen.flow(X, img_names, shuffle=False, batch_size=bs):
+      		#img = exposure.rescale_intensity(np.squeeze(xx), out_range=(0,1))
+      		#pred = UNet.predict(xx)[..., 0].reshape(inp_shape[:2])
+            #mask = yy[..., 0].reshape(inp_shape[:2])
+            pred = UNet.predict(xx)
+            for idx in range(bs):
+                prediction = pred[idx, ..., 0]
+                pr = prediction > 0.5
+                pr = remove_small_regions(pr, 0.02 * np.prod(im_shape))
+                na, et = os.path.splitext(yy[idx])
+                na = na + '.jpg'
+                io.imsave(na,  img_as_uint(pr))
+                """
+                plt.imshow(pr, 'gray')
+                plt.axis('off')
+                plt.savefig(image_names[i] + '.mask.jpg', bbox_inches='tight')
+                #plt.show()
+                plt.close()
+                """
+            batches += 1
+            if batches >= n_test / bs:
+                break
 
 
